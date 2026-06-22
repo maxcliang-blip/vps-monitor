@@ -342,7 +342,7 @@ function barHTML(label, used, total, pct, suffix) {
   return `<div class="bar-wrapper">
     <div class="bar-label">
       <span>${label}</span>
-      <span>${used}${suffix} / ${total}${suffix}</span>
+      <span>${used}${suffix || ''} / ${total}${suffix || ''}</span>
     </div>
     <div class="bar-track">
       <div class="bar-fill ${cls}" style="width:${pct}%"></div>
