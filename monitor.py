@@ -212,6 +212,19 @@ body {
 .bar-fill.medium { background: linear-gradient(90deg, #ffd700, #ffb700); }
 .bar-fill.high { background: linear-gradient(90deg, #ff6b35, #ff4444); }
 
+/* Alert flash */
+@keyframes alert-pulse {
+  0%, 100% { box-shadow: 0 0 5px rgba(255,68,68,0.5); }
+  50% { box-shadow: 0 0 25px rgba(255,68,68,0.9); }
+}
+.card.alert {
+  border-color: #ff4444;
+  animation: alert-pulse 1s ease-in-out infinite;
+}
+.card.alert::before {
+  background: linear-gradient(90deg, #ff4444, #ff6b35, #ff4444);
+}
+
 /* Spike decorations */
 .spike {
   width: 0; height: 0;
@@ -358,16 +371,22 @@ function buildCards(d) {
   const g = document.getElementById('grid');
   g.innerHTML = '';
 
+  function alertClass(pct) {
+    return pct > 90 ? 'card alert' : 'card';
+  }
+
   // CPU
-  g.innerHTML += `<div class="card">
+  g.innerHTML += `<div class="${alertClass(d.cpu)}">
     <div class="card-title"><span class="icon"></span> CPU</div>
     ${barHTML('Usage', d.cpu.toFixed(1), 100, d.cpu, '%')}
+    <div class="stat-row"><span class="stat-label">Frequency</span><span class="stat-value">${d.cpu_freq || 'N/A'}</span></div>
     <div class="stat-row"><span class="stat-label">Load Average</span><span class="stat-value">${d.load_avg}</span></div>
     <div class="stat-row"><span class="stat-label">Processes</span><span class="stat-value">${d.processes}</span></div>
+    <div class="stat-row"><span class="stat-label">Zombie</span><span class="stat-value" style="color:${d.zombies > 0 ? '#ff4444' : '#4a90d9'}">${d.zombies}</span></div>
   </div>`;
 
   // Memory
-  g.innerHTML += `<div class="card">
+  g.innerHTML += `<div class="${alertClass(d.mem_pct)}">
     <div class="card-title"><span class="icon"></span> Memory</div>
     ${barHTML('RAM', formatBytes(d.mem_used), formatBytes(d.mem_total), d.mem_pct)}
     <div class="stat-row"><span class="stat-label">Available</span><span class="stat-value">${formatBytes(d.mem_avail)}</span></div>
@@ -383,12 +402,23 @@ function buildCards(d) {
   diskHTML += `</div>`;
   g.innerHTML += diskHTML;
 
+  // Inodes
+  if (d.inodes && d.inodes.length) {
+    let inodeHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Inodes</div>`;
+    for (const n of d.inodes) {
+      inodeHTML += `<div class="stat-row"><span class="stat-label">${n.mount}</span><span class="stat-value" style="color:${n.pct > 80 ? '#ff6b35' : '#4a90d9'}">${n.pct}% (${n.used}/${n.total})</span></div>`;
+    }
+    inodeHTML += `</div>`;
+    g.innerHTML += inodeHTML;
+  }
+
   // Network
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> Network</div>
     <table class="net-table">
       <tr><th>Interface</th><th>RX</th><th>TX</th></tr>
-      ${d.network.map(n => `<tr><td>${n.name}</td><td>${n.rx}</td><td>${n.tx}</td></tr>`).join('')}
+      ${d.network.map(n => `<tr><td>${n.name}</td><td>${n.rx}<br><span style="color:#4a90d9;font-size:7px">${n.rx_speed}</span></td><td>${n.tx}<br><span style="color:#ff6b35;font-size:7px">${n.tx_speed}</span></td></tr>`).join('')}
     </table>
   </div>`;
 
@@ -405,7 +435,16 @@ function buildCards(d) {
     g.innerHTML += ioHTML;
   }
 
-  // Uptime
+  // Connections & Security
+  g.innerHTML += `<div class="card">
+    <div class="card-title"><span class="icon"></span> Connections & Security</div>
+    <div class="stat-row"><span class="stat-label">TCP Connections</span><span class="stat-value">${d.tcp_connections}</span></div>
+    <div class="stat-row"><span class="stat-label">Failed SSH (24h)</span><span class="stat-value" style="color:${d.failed_ssh > 0 ? '#ff6b35' : '#4a90d9'}">${d.failed_ssh}</span></div>
+    <div class="stat-row"><span class="stat-label">Ping (google.com)</span><span class="stat-value">${d.ping_ms || 'N/A'}</span></div>
+    ${d.pkg_updates !== null ? `<div class="stat-row"><span class="stat-label">Package Updates</span><span class="stat-value" style="color:${d.pkg_updates > 0 ? '#ffd700' : '#4a90d9'}">${d.pkg_updates}</span></div>` : ''}
+  </div>`;
+
+  // System
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> System</div>
     <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-value">${d.uptime}</span></div>
@@ -414,6 +453,17 @@ function buildCards(d) {
     <div class="stat-row"><span class="stat-label">Kernel</span><span class="stat-value">${d.kernel}</span></div>
     <div class="stat-row"><span class="stat-label">Users</span><span class="stat-value">${d.users}</span></div>
   </div>`;
+
+  // Service Uptimes
+  if (d.svc_uptime && Object.keys(d.svc_uptime).length) {
+    let svcHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Monitor Services</div>`;
+    for (const [name, val] of Object.entries(d.svc_uptime)) {
+      svcHTML += `<div class="stat-row"><span class="stat-label">${name}</span><span class="stat-value" style="font-size:8px;color:#aaa">${val}</span></div>`;
+    }
+    svcHTML += `</div>`;
+    g.innerHTML += svcHTML;
+  }
 
   // Top processes by CPU
   if (d.top_cpu && d.top_cpu.length) {
@@ -536,12 +586,138 @@ class DataHandler(http.server.BaseHTTPRequestHandler):
 
 
 _io_prev = {}
+_net_prev = {}
+
+def get_cpu_freq():
+    try:
+        freqs = []
+        for i in range(os.cpu_count() or 1):
+            path = f'/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq'
+            if os.path.exists(path):
+                with open(path) as f:
+                    freqs.append(int(f.read().strip()) // 1000)
+        if freqs:
+            avg = sum(freqs) / len(freqs)
+            return f'{avg:.0f} MHz'
+    except Exception:
+        pass
+    return 'N/A'
+
+def get_ping_latency():
+    try:
+        out = subprocess.run(
+            ['ping', '-c', '1', '-W', '3', 'google.com'],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in out.stdout.split('\n'):
+            if 'time=' in line:
+                ms = line.split('time=')[1].split()[0]
+                return ms
+    except Exception:
+        pass
+    return None
+
+def get_tcp_connections():
+    try:
+        count = 0
+        with open('/proc/net/tcp') as f:
+            for i, line in enumerate(f):
+                if i > 0:
+                    count += 1
+        with open('/proc/net/tcp6') as f:
+            for i, line in enumerate(f):
+                if i > 0:
+                    count += 1
+        return count
+    except Exception:
+        return 0
+
+def get_failed_logins():
+    try:
+        out = subprocess.check_output(
+            ['journalctl', '-u', 'sshd', '--since', '24 hours ago', '--no-pager', '--no-legend'],
+            stderr=subprocess.DEVNULL, timeout=5, text=True
+        )
+        count = out.count('Failed password')
+        return count if count > 0 else 0
+    except Exception:
+        return 0
+
+_pkg_cache = {'count': None, 'done': False}
+
+def get_package_updates():
+    if _pkg_cache['done']:
+        return _pkg_cache['count']
+    _pkg_cache['done'] = True
+    try:
+        out = subprocess.run(
+            ['dnf', 'check-update', '--quiet'],
+            capture_output=True, text=True, timeout=2
+        )
+        _pkg_cache['count'] = len([l for l in out.stdout.strip().split('\n') if l]) if out.returncode == 100 else 0
+    except Exception:
+        _pkg_cache['count'] = None
+    return _pkg_cache['count']
+
+def get_inode_usage():
+    try:
+        inodes = []
+        for part in psutil.disk_partitions():
+            try:
+                st = os.statvfs(part.mountpoint)
+                total = st.f_files
+                free = st.f_ffree
+                used = total - free
+                if total > 0:
+                    pct = round(used / total * 100, 1)
+                    inodes.append({
+                        'mount': part.mountpoint,
+                        'used': used,
+                        'total': total,
+                        'pct': pct,
+                    })
+            except Exception:
+                pass
+        return inodes
+    except Exception:
+        return []
+
+def get_service_uptimes():
+    try:
+        result = {}
+        for svc in ['vps-monitor', 'vps-monitor-tunnel', 'vps-monitor-url-updater']:
+            out = subprocess.run(
+                ['systemctl', 'show', '-p', 'ActiveEnterTimestamp', svc],
+                capture_output=True, text=True, timeout=3
+            )
+            line = out.stdout.strip()
+            if '=' in line:
+                val = line.split('=', 1)[1]
+                result[svc] = val if val != '' else 'N/A'
+            else:
+                result[svc] = 'N/A'
+        return result
+    except Exception:
+        return {}
 
 def collect_data():
     # CPU
     cpu_pct = psutil.cpu_percent(interval=0.5)
     load = os.getloadavg()
     load_str = f'{load[0]:.2f} {load[1]:.2f} {load[2]:.2f}'
+    cpu_freq = get_cpu_freq()
+
+    # Zombie processes
+    zombie_count = 0
+    try:
+        for p in psutil.process_iter(['status']):
+            try:
+                if p.info['status'] == 'zombie':
+                    zombie_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception:
+        pass
 
     # Memory
     mem = psutil.virtual_memory()
@@ -560,6 +736,9 @@ def collect_data():
             })
         except PermissionError:
             pass
+
+    # Inode usage
+    inodes = get_inode_usage()
 
     # Disk I/O
     global _io_prev
@@ -586,18 +765,32 @@ def collect_data():
             break
 
     # Network
+    global _net_prev
     net = psutil.net_io_counters(pernic=True)
     net_data = []
     for name, counters in sorted(net.items()):
         if name == 'lo':
             continue
+        prev = _net_prev.get(name)
+        if prev:
+            dt = time.time() - prev['time']
+            rx_speed = (counters.bytes_recv - prev['rx']) / dt if dt > 0 else 0
+            tx_speed = (counters.bytes_sent - prev['tx']) / dt if dt > 0 else 0
+        else:
+            rx_speed = tx_speed = 0
+        _net_prev[name] = {'rx': counters.bytes_recv, 'tx': counters.bytes_sent, 'time': time.time()}
         net_data.append({
             'name': name,
             'rx': format_bytes(counters.bytes_recv) + ' RX',
             'tx': format_bytes(counters.bytes_sent) + ' TX',
+            'rx_speed': format_bytes(rx_speed) + '/s',
+            'tx_speed': format_bytes(tx_speed) + '/s',
         })
         if len(net_data) >= 4:
             break
+
+    # TCP connections
+    tcp_connections = get_tcp_connections()
 
     # Uptime
     uptime_sec = time.time() - psutil.boot_time()
@@ -652,10 +845,24 @@ def collect_data():
     except Exception:
         pass
 
+    # Failed SSH logins (24h)
+    failed_ssh = get_failed_logins()
+
+    # Package updates
+    pkg_updates = get_package_updates()
+
+    # Ping latency
+    ping_ms = get_ping_latency()
+
+    # Service uptimes
+    svc_uptime = get_service_uptimes()
+
     return {
         'cpu': cpu_pct,
+        'cpu_freq': cpu_freq,
         'load_avg': load_str,
         'processes': len(psutil.pids()),
+        'zombies': zombie_count,
         'mem_total': mem.total,
         'mem_used': mem.used,
         'mem_avail': mem.available,
@@ -664,8 +871,10 @@ def collect_data():
         'swap_used': swap.used,
         'swap_pct': swap.percent,
         'disks': disks,
+        'inodes': inodes,
         'disk_io': io_data,
         'network': net_data,
+        'tcp_connections': tcp_connections,
         'uptime': uptime_str,
         'hostname': os.uname().nodename,
         'os': f'{os.uname().sysname} {os.uname().release}',
@@ -674,6 +883,10 @@ def collect_data():
         'top_cpu': top_cpu,
         'top_mem': top_mem,
         'services': services,
+        'failed_ssh': failed_ssh,
+        'pkg_updates': pkg_updates,
+        'ping_ms': ping_ms,
+        'svc_uptime': svc_uptime,
     }
 
 
