@@ -367,6 +367,18 @@ function buildCards(d) {
     </table>
   </div>`;
 
+  if (d.disk_io && d.disk_io.length) {
+    let ioHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Disk I/O</div>
+      <table class="net-table">
+        <tr><th>Disk</th><th>Read</th><th>Write</th></tr>`;
+    for (const io of d.disk_io) {
+      ioHTML += `<tr><td>${io.name}</td><td>${io.read}<br><span style="color:#4a90d9;font-size:7px">${io.read_speed}</span></td><td>${io.written}<br><span style="color:#ff6b35;font-size:7px">${io.write_speed}</span></td></tr>`;
+    }
+    ioHTML += `</table></div>`;
+    g.innerHTML += ioHTML;
+  }
+
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> System</div>
     <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-value">${d.uptime}</span></div>
@@ -376,11 +388,11 @@ function buildCards(d) {
     <div class="stat-row"><span class="stat-label">Users</span><span class="stat-value">${d.users}</span></div>
   </div>`;
 
-  if (d.top_procs && d.top_procs.length) {
+  if (d.top_cpu && d.top_cpu.length) {
     let procsHTML = `<div class="card">
-      <div class="card-title"><span class="icon"></span> Top Processes</div>
+      <div class="card-title"><span class="icon"></span> Top CPU</div>
       <div class="process-list">`;
-    for (const p of d.top_procs) {
+    for (const p of d.top_cpu) {
       procsHTML += `<div class="process-item">
         <span class="pname">${p.name}</span>
         <span class="pcpu">${p.cpu}%</span>
@@ -389,6 +401,34 @@ function buildCards(d) {
     }
     procsHTML += `</div></div>`;
     g.innerHTML += procsHTML;
+  }
+
+  if (d.top_mem && d.top_mem.length) {
+    let memHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Top Memory</div>
+      <div class="process-list">`;
+    for (const p of d.top_mem) {
+      memHTML += `<div class="process-item">
+        <span class="pname">${p.name}</span>
+        <span class="pcpu">${p.cpu}%</span>
+        <span class="pmem">${p.mem}%</span>
+      </div>`;
+    }
+    memHTML += `</div></div>`;
+    g.innerHTML += memHTML;
+  }
+
+  if (d.services && d.services.length) {
+    let svcHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Running Services</div>
+      <div class="process-list">`;
+    for (const s of d.services) {
+      svcHTML += `<div class="process-item">
+        <span class="pname">${s}</span>
+      </div>`;
+    }
+    svcHTML += `</div></div>`;
+    g.innerHTML += svcHTML;
   }
 }
 
