@@ -18,7 +18,7 @@ while true; do
 
       # Commit and push
       cd "$REPO_DIR"
-      git add "$INDEX_FILE" 2>/dev/null
+      git add "$INDEX_FILE" AGENTS.md 2>/dev/null
       git -c user.name="vps-monitor" -c user.email="vps-monitor@localhost" \
         commit -m "Auto-update tunnel URL" 2>/dev/null || true
       git push origin main 2>/dev/null || true
