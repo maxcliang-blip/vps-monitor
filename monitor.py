@@ -587,6 +587,19 @@ class DataHandler(http.server.BaseHTTPRequestHandler):
 
 _io_prev = {}
 _net_prev = {}
+_cpu_cache = {'pct': 0.0}
+
+def _cpu_monitor():
+    while True:
+        _cpu_cache['pct'] = psutil.cpu_percent(interval=1)
+        time.sleep(2)
+
+def _start_cpu_monitor():
+    import threading
+    t = threading.Thread(target=_cpu_monitor, daemon=True)
+    t.start()
+    # First measurement is instant
+    _cpu_cache['pct'] = psutil.cpu_percent(interval=0)
 
 def get_cpu_freq():
     try:
@@ -702,7 +715,7 @@ def get_service_uptimes():
 
 def collect_data():
     # CPU
-    cpu_pct = psutil.cpu_percent(interval=0.5)
+    cpu_pct = _cpu_cache['pct']
     load = os.getloadavg()
     load_str = f'{load[0]:.2f} {load[1]:.2f} {load[2]:.2f}'
     cpu_freq = get_cpu_freq()
@@ -913,6 +926,7 @@ if __name__ == '__main__':
     print(f'  Listening on http://0.0.0.0:{PORT}')
     print(f'  Press Ctrl+C to stop')
     print(f' ===========================================')
+    _start_cpu_monitor()
     server = ThreadedHTTPServer(('0.0.0.0', PORT), DataHandler)
     try:
         server.serve_forever()
