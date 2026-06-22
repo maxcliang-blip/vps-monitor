@@ -656,20 +656,27 @@ def get_failed_logins():
     except Exception:
         return 0
 
-_pkg_cache = {'count': None, 'done': False}
+_pkg_cache = {'count': None}
 
-def get_package_updates():
-    if _pkg_cache['done']:
-        return _pkg_cache['count']
-    _pkg_cache['done'] = True
+def _refresh_pkg_cache():
     try:
         out = subprocess.run(
-            ['dnf', 'check-update', '--quiet'],
-            capture_output=True, text=True, timeout=2
+            ['dnf', 'check-update', '-q', '-y', '--cacheonly', '--disablerepo=tailscale-stable'],
+            capture_output=True, text=True, timeout=20
         )
-        _pkg_cache['count'] = len([l for l in out.stdout.strip().split('\n') if l]) if out.returncode == 100 else 0
+        if out.returncode == 100:
+            pkgs = [l for l in out.stdout.strip().split('\n') if l and not l.startswith('Upgraded') and not l.startswith('Obsoleting') and ' ' in l]
+            _pkg_cache['count'] = len(pkgs)
+        else:
+            _pkg_cache['count'] = 0
     except Exception:
         _pkg_cache['count'] = None
+
+def get_package_updates():
+    if _pkg_cache['count'] is None and not getattr(_refresh_pkg_cache, '_started', False):
+        _refresh_pkg_cache._started = True
+        import threading
+        threading.Thread(target=_refresh_pkg_cache, daemon=True).start()
     return _pkg_cache['count']
 
 def get_inode_usage():
