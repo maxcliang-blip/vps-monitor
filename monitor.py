@@ -5,6 +5,7 @@ import http.server
 import json
 import os
 import socketserver
+import subprocess
 import time
 import urllib.parse
 
@@ -391,6 +392,19 @@ function buildCards(d) {
     </table>
   </div>`;
 
+  // Disk I/O
+  if (d.disk_io && d.disk_io.length) {
+    let ioHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Disk I/O</div>
+      <table class="net-table">
+        <tr><th>Disk</th><th>Read</th><th>Write</th></tr>`;
+    for (const io of d.disk_io) {
+      ioHTML += `<tr><td>${io.name}</td><td>${io.read}<br><span style="color:#4a90d9;font-size:7px">${io.read_speed}</span></td><td>${io.written}<br><span style="color:#ff6b35;font-size:7px">${io.write_speed}</span></td></tr>`;
+    }
+    ioHTML += `</table></div>`;
+    g.innerHTML += ioHTML;
+  }
+
   // Uptime
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> System</div>
@@ -401,12 +415,12 @@ function buildCards(d) {
     <div class="stat-row"><span class="stat-label">Users</span><span class="stat-value">${d.users}</span></div>
   </div>`;
 
-  // Top processes
-  if (d.top_procs && d.top_procs.length) {
+  // Top processes by CPU
+  if (d.top_cpu && d.top_cpu.length) {
     let procsHTML = `<div class="card">
-      <div class="card-title"><span class="icon"></span> Top Processes</div>
+      <div class="card-title"><span class="icon"></span> Top CPU</div>
       <div class="process-list">`;
-    for (const p of d.top_procs) {
+    for (const p of d.top_cpu) {
       procsHTML += `<div class="process-item">
         <span class="pname">${p.name}</span>
         <span class="pcpu">${p.cpu}%</span>
@@ -415,6 +429,36 @@ function buildCards(d) {
     }
     procsHTML += `</div></div>`;
     g.innerHTML += procsHTML;
+  }
+
+  // Top processes by memory
+  if (d.top_mem && d.top_mem.length) {
+    let memHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Top Memory</div>
+      <div class="process-list">`;
+    for (const p of d.top_mem) {
+      memHTML += `<div class="process-item">
+        <span class="pname">${p.name}</span>
+        <span class="pcpu">${p.cpu}%</span>
+        <span class="pmem">${p.mem}%</span>
+      </div>`;
+    }
+    memHTML += `</div></div>`;
+    g.innerHTML += memHTML;
+  }
+
+  // Running services
+  if (d.services && d.services.length) {
+    let svcHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Running Services</div>
+      <div class="process-list">`;
+    for (const s of d.services) {
+      svcHTML += `<div class="process-item">
+        <span class="pname">${s}</span>
+      </div>`;
+    }
+    svcHTML += `</div></div>`;
+    g.innerHTML += svcHTML;
   }
 }
 
@@ -491,6 +535,8 @@ class DataHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(HTML.encode())
 
 
+_io_prev = {}
+
 def collect_data():
     # CPU
     cpu_pct = psutil.cpu_percent(interval=0.5)
@@ -514,6 +560,30 @@ def collect_data():
             })
         except PermissionError:
             pass
+
+    # Disk I/O
+    global _io_prev
+    io_now = psutil.disk_io_counters(perdisk=True)
+    io_data = []
+    for name in ('sda', 'nvme0n1', 'vda', 'xda'):
+        if name in io_now:
+            c = io_now[name]
+            prev = _io_prev.get(name)
+            if prev:
+                dt = time.time() - prev['time']
+                read_speed = (c.read_bytes - prev['read_bytes']) / dt if dt > 0 else 0
+                write_speed = (c.write_bytes - prev['write_bytes']) / dt if dt > 0 else 0
+            else:
+                read_speed = write_speed = 0
+            _io_prev[name] = {'read_bytes': c.read_bytes, 'write_bytes': c.write_bytes, 'time': time.time()}
+            io_data.append({
+                'name': name,
+                'read': format_bytes(c.read_bytes),
+                'written': format_bytes(c.write_bytes),
+                'read_speed': format_bytes(read_speed) + '/s',
+                'write_speed': format_bytes(write_speed) + '/s',
+            })
+            break
 
     # Network
     net = psutil.net_io_counters(pernic=True)
@@ -539,19 +609,48 @@ def collect_data():
     else:
         uptime_str = f'{hours}h {minutes}m'
 
-    # Top processes
-    procs = []
+    # Top processes by CPU
+    top_cpu = []
     for p in sorted(psutil.process_iter(['name', 'cpu_percent', 'memory_percent']),
                      key=lambda p: p.info['cpu_percent'] or 0, reverse=True)[:10]:
         try:
             if p.info['cpu_percent'] is not None:
-                procs.append({
+                top_cpu.append({
                     'name': (p.info['name'] or '?')[:20],
                     'cpu': round(p.info['cpu_percent'] or 0, 1),
                     'mem': round(p.info['memory_percent'] or 0, 1),
                 })
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+
+    # Top processes by memory
+    top_mem = []
+    for p in sorted(psutil.process_iter(['name', 'cpu_percent', 'memory_percent']),
+                     key=lambda p: p.info['memory_percent'] or 0, reverse=True)[:10]:
+        try:
+            if p.info['memory_percent'] is not None:
+                top_mem.append({
+                    'name': (p.info['name'] or '?')[:20],
+                    'cpu': round(p.info['cpu_percent'] or 0, 1),
+                    'mem': round(p.info['memory_percent'] or 0, 1),
+                })
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    # Running services
+    services = []
+    try:
+        out = subprocess.check_output(
+            ['systemctl', 'list-units', '--type=service', '--state=running', '--no-pager', '--no-legend'],
+            stderr=subprocess.DEVNULL, timeout=5, text=True
+        )
+        for line in out.strip().split('\n')[:15]:
+            parts = line.split()
+            if len(parts) >= 1:
+                name = parts[0].replace('.service', '')[:25]
+                services.append(name)
+    except Exception:
+        pass
 
     return {
         'cpu': cpu_pct,
@@ -565,13 +664,16 @@ def collect_data():
         'swap_used': swap.used,
         'swap_pct': swap.percent,
         'disks': disks,
+        'disk_io': io_data,
         'network': net_data,
         'uptime': uptime_str,
         'hostname': os.uname().nodename,
         'os': f'{os.uname().sysname} {os.uname().release}',
         'kernel': os.uname().version.split()[0],
         'users': len(psutil.users()),
-        'top_procs': procs,
+        'top_cpu': top_cpu,
+        'top_mem': top_mem,
+        'services': services,
     }
 
 
