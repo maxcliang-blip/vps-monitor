@@ -247,6 +247,18 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.04);
 }
 
+@keyframes alert-pulse {
+  0%, 100% { box-shadow: 0 0 5px rgba(255,68,68,0.5); }
+  50% { box-shadow: 0 0 25px rgba(255,68,68,0.9); }
+}
+.card.alert {
+  border-color: #ff4444;
+  animation: alert-pulse 1s ease-in-out infinite;
+}
+.card.alert::before {
+  background: linear-gradient(90deg, #ff4444, #ff6b35, #ff4444);
+}
+
 @media (max-width: 600px) {
   .header h1 { font-size: 18px; }
   .grid { grid-template-columns: 1fr; padding: 0 10px; }
@@ -337,14 +349,20 @@ function buildCards(d) {
   const g = document.getElementById('grid');
   g.innerHTML = '';
 
-  g.innerHTML += `<div class="card">
+  function alertClass(pct) {
+    return pct > 90 ? 'card alert' : 'card';
+  }
+
+  g.innerHTML += `<div class="${alertClass(d.cpu)}">
     <div class="card-title"><span class="icon"></span> CPU</div>
     ${barHTML('Usage', d.cpu.toFixed(1), 100, d.cpu, '%')}
+    <div class="stat-row"><span class="stat-label">Frequency</span><span class="stat-value">${d.cpu_freq || 'N/A'}</span></div>
     <div class="stat-row"><span class="stat-label">Load Average</span><span class="stat-value">${d.load_avg}</span></div>
     <div class="stat-row"><span class="stat-label">Processes</span><span class="stat-value">${d.processes}</span></div>
+    <div class="stat-row"><span class="stat-label">Zombie</span><span class="stat-value" style="color:${d.zombies > 0 ? '#ff4444' : '#4a90d9'}">${d.zombies}</span></div>
   </div>`;
 
-  g.innerHTML += `<div class="card">
+  g.innerHTML += `<div class="${alertClass(d.mem_pct)}">
     <div class="card-title"><span class="icon"></span> Memory</div>
     ${barHTML('RAM', formatBytes(d.mem_used), formatBytes(d.mem_total), d.mem_pct)}
     <div class="stat-row"><span class="stat-label">Available</span><span class="stat-value">${formatBytes(d.mem_avail)}</span></div>
@@ -359,11 +377,21 @@ function buildCards(d) {
   diskHTML += `</div>`;
   g.innerHTML += diskHTML;
 
+  if (d.inodes && d.inodes.length) {
+    let inodeHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Inodes</div>`;
+    for (const n of d.inodes) {
+      inodeHTML += `<div class="stat-row"><span class="stat-label">${n.mount}</span><span class="stat-value" style="color:${n.pct > 80 ? '#ff6b35' : '#4a90d9'}">${n.pct}% (${n.used}/${n.total})</span></div>`;
+    }
+    inodeHTML += `</div>`;
+    g.innerHTML += inodeHTML;
+  }
+
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> Network</div>
     <table class="net-table">
       <tr><th>Interface</th><th>RX</th><th>TX</th></tr>
-      ${d.network.map(n => `<tr><td>${n.name}</td><td>${n.rx}</td><td>${n.tx}</td></tr>`).join('')}
+      ${d.network.map(n => `<tr><td>${n.name}</td><td>${n.rx}<br><span style="color:#4a90d9;font-size:7px">${n.rx_speed}</span></td><td>${n.tx}<br><span style="color:#ff6b35;font-size:7px">${n.tx_speed}</span></td></tr>`).join('')}
     </table>
   </div>`;
 
@@ -380,6 +408,14 @@ function buildCards(d) {
   }
 
   g.innerHTML += `<div class="card">
+    <div class="card-title"><span class="icon"></span> Connections & Security</div>
+    <div class="stat-row"><span class="stat-label">TCP Connections</span><span class="stat-value">${d.tcp_connections}</span></div>
+    <div class="stat-row"><span class="stat-label">Failed SSH (24h)</span><span class="stat-value" style="color:${d.failed_ssh > 0 ? '#ff6b35' : '#4a90d9'}">${d.failed_ssh}</span></div>
+    <div class="stat-row"><span class="stat-label">Ping (google.com)</span><span class="stat-value">${d.ping_ms || 'N/A'}</span></div>
+    ${d.pkg_updates !== null ? `<div class="stat-row"><span class="stat-label">Package Updates</span><span class="stat-value" style="color:${d.pkg_updates > 0 ? '#ffd700' : '#4a90d9'}">${d.pkg_updates}</span></div>` : ''}
+  </div>`;
+
+  g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> System</div>
     <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-value">${d.uptime}</span></div>
     <div class="stat-row"><span class="stat-label">Hostname</span><span class="stat-value">${d.hostname}</span></div>
@@ -387,6 +423,16 @@ function buildCards(d) {
     <div class="stat-row"><span class="stat-label">Kernel</span><span class="stat-value">${d.kernel}</span></div>
     <div class="stat-row"><span class="stat-label">Users</span><span class="stat-value">${d.users}</span></div>
   </div>`;
+
+  if (d.svc_uptime && Object.keys(d.svc_uptime).length) {
+    let svcHTML = `<div class="card">
+      <div class="card-title"><span class="icon"></span> Monitor Services</div>`;
+    for (const [name, val] of Object.entries(d.svc_uptime)) {
+      svcHTML += `<div class="stat-row"><span class="stat-label">${name}</span><span class="stat-value" style="font-size:8px;color:#aaa">${val}</span></div>`;
+    }
+    svcHTML += `</div>`;
+    g.innerHTML += svcHTML;
+  }
 
   if (d.top_cpu && d.top_cpu.length) {
     let procsHTML = `<div class="card">
