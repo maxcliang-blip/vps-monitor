@@ -13,8 +13,8 @@ while true; do
       LAST_URL="$NEW_URL"
       echo "[auto-update] Tunnel URL changed to: $NEW_URL"
 
-      # Update the API_HOST in docs/index.html
-      sed -i "s|const API_HOST = .*|const API_HOST = '$NEW_URL';  // Cloudflare Tunnel URL|" "$INDEX_FILE"
+      # Update the API_HOST tunnel URL in docs/index.html
+      sed -i "s|  : 'https\?://[^']*';  // Cloudflare Tunnel URL|  : '$NEW_URL';  // Cloudflare Tunnel URL|" "$INDEX_FILE"
 
       # Commit and push
       cd "$REPO_DIR"

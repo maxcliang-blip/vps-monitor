@@ -282,7 +282,7 @@ body {
 <script>
 // ============================================================
 // EDIT YOUR VPS ADDRESS HERE:
-const API_HOST = 'https://urge-vat-serve-mas.trycloudflare.com';  // Cloudflare Tunnel URL
+const API_HOST = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? ''  // Same origin when served by monitor.py
   : 'https://urge-vat-serve-mas.trycloudflare.com';  // Cloudflare Tunnel URL
 // ============================================================
