@@ -1,18 +1,4 @@
-#!/usr/bin/env python3
-"""VPS Monitor with Geometry Dash theme"""
-
-import http.server
-import json
-import os
-import socketserver
-import time
-import urllib.parse
-
-import psutil
-
-PORT = 8080
-
-HTML = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -32,7 +18,6 @@ body {
   position: relative;
 }
 
-/* Stars */
 .stars {
   position: fixed;
   top: 0; left: 0;
@@ -52,7 +37,6 @@ body {
   100% { opacity: 1; }
 }
 
-/* Ground */
 .ground {
   position: fixed;
   bottom: 0; left: 0;
@@ -67,7 +51,6 @@ body {
 .ground-block:nth-child(odd) { background: #2d1b69; }
 .ground-block:nth-child(even) { background: #3d2599; }
 
-/* Header */
 .header {
   position: relative;
   z-index: 1;
@@ -86,7 +69,6 @@ body {
   margin-top: 10px;
 }
 
-/* Cube icon */
 .cube-row {
   display: flex;
   justify-content: center;
@@ -108,7 +90,6 @@ body {
   50% { transform: rotate(45deg) translateY(-10px); }
 }
 
-/* Main grid */
 .grid {
   position: relative;
   z-index: 1;
@@ -120,7 +101,6 @@ body {
   padding: 0 18px;
 }
 
-/* Card */
 .card {
   background: linear-gradient(135deg, rgba(74,144,217,0.15) 0%, rgba(255,215,0,0.08) 100%);
   border: 2px solid rgba(255,215,0,0.3);
@@ -152,7 +132,6 @@ body {
   clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
 }
 
-/* Stat rows */
 .stat-row {
   display: flex;
   justify-content: space-between;
@@ -170,7 +149,6 @@ body {
   color: #fff;
 }
 
-/* Progress bar wrapper */
 .bar-wrapper {
   margin: 8px 0;
 }
@@ -211,7 +189,6 @@ body {
 .bar-fill.medium { background: linear-gradient(90deg, #ffd700, #ffb700); }
 .bar-fill.high { background: linear-gradient(90deg, #ff6b35, #ff4444); }
 
-/* Spike decorations */
 .spike {
   width: 0; height: 0;
   border-left: 10px solid transparent;
@@ -222,7 +199,6 @@ body {
   z-index: 1;
 }
 
-/* Server info bar */
 .server-info {
   position: relative;
   z-index: 1;
@@ -233,7 +209,6 @@ body {
   margin-bottom: 4px;
 }
 
-/* Process list */
 .process-list {
   margin-top: 10px;
   max-height: 180px;
@@ -254,7 +229,6 @@ body {
 .process-item .pcpu { color: #4a90d9; }
 .process-item .pmem { color: #ffd700; }
 
-/* Network table */
 .net-table {
   width: 100%;
   font-size: 8px;
@@ -306,7 +280,13 @@ body {
 <div class="ground" id="ground"></div>
 
 <script>
-const API_HOST = '';
+// ============================================================
+// EDIT YOUR VPS ADDRESS HERE:
+const API_HOST = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? ''  // Same origin when served by monitor.py
+  : 'http://YOUR_VPS_IP:8080';  // Your VPS public IP or domain
+// ============================================================
+
 const COLORS = { low: '#4a90d9', medium: '#ffd700', high: '#ff6b35' };
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
@@ -357,7 +337,6 @@ function buildCards(d) {
   const g = document.getElementById('grid');
   g.innerHTML = '';
 
-  // CPU
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> CPU</div>
     ${barHTML('Usage', d.cpu.toFixed(1), 100, d.cpu, '%')}
@@ -365,7 +344,6 @@ function buildCards(d) {
     <div class="stat-row"><span class="stat-label">Processes</span><span class="stat-value">${d.processes}</span></div>
   </div>`;
 
-  // Memory
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> Memory</div>
     ${barHTML('RAM', formatBytes(d.mem_used), formatBytes(d.mem_total), d.mem_pct)}
@@ -373,7 +351,6 @@ function buildCards(d) {
     ${d.swap_total > 0 ? barHTML('Swap', formatBytes(d.swap_used), formatBytes(d.swap_total), d.swap_pct) : ''}
   </div>`;
 
-  // Storage
   let diskHTML = `<div class="card">
     <div class="card-title"><span class="icon"></span> Storage</div>`;
   for (const disk of d.disks) {
@@ -382,7 +359,6 @@ function buildCards(d) {
   diskHTML += `</div>`;
   g.innerHTML += diskHTML;
 
-  // Network
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> Network</div>
     <table class="net-table">
@@ -391,7 +367,6 @@ function buildCards(d) {
     </table>
   </div>`;
 
-  // Uptime
   g.innerHTML += `<div class="card">
     <div class="card-title"><span class="icon"></span> System</div>
     <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-value">${d.uptime}</span></div>
@@ -401,7 +376,6 @@ function buildCards(d) {
     <div class="stat-row"><span class="stat-label">Users</span><span class="stat-value">${d.users}</span></div>
   </div>`;
 
-  // Top processes
   if (d.top_procs && d.top_procs.length) {
     let procsHTML = `<div class="card">
       <div class="card-title"><span class="icon"></span> Top Processes</div>
@@ -418,7 +392,6 @@ function buildCards(d) {
   }
 }
 
-// Generate stars
 (function initStars() {
   const c = document.getElementById('stars');
   for (let i = 0; i < 80; i++) {
@@ -432,7 +405,6 @@ function buildCards(d) {
   }
 })();
 
-// Ground blocks
 (function initGround() {
   const g = document.getElementById('ground');
   const n = Math.ceil(window.innerWidth / 48) + 2;
@@ -460,139 +432,3 @@ setInterval(fetchData, 3000);
 </script>
 </body>
 </html>
-"""
-
-
-class DataHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-
-        if path == '/api/data':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Cache-Control', 'no-cache')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            data = collect_data()
-            self.wfile.write(json.dumps(data).encode())
-        else:
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.end_headers()
-            self.wfile.write(HTML.encode())
-
-
-def collect_data():
-    # CPU
-    cpu_pct = psutil.cpu_percent(interval=0.5)
-    load = os.getloadavg()
-    load_str = f'{load[0]:.2f} {load[1]:.2f} {load[2]:.2f}'
-
-    # Memory
-    mem = psutil.virtual_memory()
-    swap = psutil.swap_memory()
-
-    # Disks
-    disks = []
-    for part in psutil.disk_partitions():
-        try:
-            usage = psutil.disk_usage(part.mountpoint)
-            disks.append({
-                'mount': part.mountpoint,
-                'total': usage.total,
-                'used': usage.used,
-                'pct': usage.percent,
-            })
-        except PermissionError:
-            pass
-
-    # Network
-    net = psutil.net_io_counters(pernic=True)
-    net_data = []
-    for name, counters in sorted(net.items()):
-        if name == 'lo':
-            continue
-        net_data.append({
-            'name': name,
-            'rx': format_bytes(counters.bytes_recv) + ' RX',
-            'tx': format_bytes(counters.bytes_sent) + ' TX',
-        })
-        if len(net_data) >= 4:
-            break
-
-    # Uptime
-    uptime_sec = time.time() - psutil.boot_time()
-    days = int(uptime_sec // 86400)
-    hours = int((uptime_sec % 86400) // 3600)
-    minutes = int((uptime_sec % 3600) // 60)
-    if days > 0:
-        uptime_str = f'{days}d {hours}h {minutes}m'
-    else:
-        uptime_str = f'{hours}h {minutes}m'
-
-    # Top processes
-    procs = []
-    for p in sorted(psutil.process_iter(['name', 'cpu_percent', 'memory_percent']),
-                     key=lambda p: p.info['cpu_percent'] or 0, reverse=True)[:10]:
-        try:
-            if p.info['cpu_percent'] is not None:
-                procs.append({
-                    'name': (p.info['name'] or '?')[:20],
-                    'cpu': round(p.info['cpu_percent'] or 0, 1),
-                    'mem': round(p.info['memory_percent'] or 0, 1),
-                })
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-
-    return {
-        'cpu': cpu_pct,
-        'load_avg': load_str,
-        'processes': len(psutil.pids()),
-        'mem_total': mem.total,
-        'mem_used': mem.used,
-        'mem_avail': mem.available,
-        'mem_pct': mem.percent,
-        'swap_total': swap.total,
-        'swap_used': swap.used,
-        'swap_pct': swap.percent,
-        'disks': disks,
-        'network': net_data,
-        'uptime': uptime_str,
-        'hostname': os.uname().nodename,
-        'os': f'{os.uname().sysname} {os.uname().release}',
-        'kernel': os.uname().version.split()[0],
-        'users': len(psutil.users()),
-        'top_procs': procs,
-    }
-
-
-def format_bytes(bytes_val):
-    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
-        if bytes_val < 1024:
-            return f'{bytes_val:.1f} {unit}'
-        bytes_val /= 1024
-    return f'{bytes_val:.1f} PB'
-
-
-class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    allow_reuse_address = True
-    daemon_threads = True
-
-
-if __name__ == '__main__':
-    print(f'  ___ ___ ___   ___ ___ ___ ___ ___ ___ ___ ')
-    print(f' | _ \ _ \ _ \ / __| __/ __|_ _/ __| __| _ \\')
-    print(f' |  _/  _/   / \__ \ _| (__ | |\__ \ _||   /')
-    print(f' |_| |_| |_|_\\ |___/___\___|___|___/___|_|_\\')
-    print(f' ===========================================')
-    print(f'  VPS Monitor - Geometry Dash Edition')
-    print(f'  Listening on http://0.0.0.0:{PORT}')
-    print(f'  Press Ctrl+C to stop')
-    print(f' ===========================================')
-    server = ThreadedHTTPServer(('0.0.0.0', PORT), DataHandler)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print('\nShutting down...')
-        server.shutdown()
